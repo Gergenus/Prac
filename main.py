@@ -1,23 +1,22 @@
 import streamlit as st
 import cv2
-import tempfile
 import os
 import requests
 
 n8n_webhook_url = "http://localhost:5678/webhook/store-video"
 
+
 def process_video(input_path):
-    print(input_path)
-    output_path = input_path.replace(".", "_processed.")
-    print(output_path)
+    output_path = "/app/output/output_video.mp4"
     cap = cv2.VideoCapture(input_path)
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = cap.get(cv2.CAP_PROP_FPS)
 
-    fourcc = cv2.VideoWriter_fourcc(*'avc1')
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     out = cv2.VideoWriter(output_path, fourcc, fps, (width, height), isColor=True)
-
+    if not out.isOpened():
+        raise RuntimeError("Failed to create VideoWriter!")
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
@@ -66,15 +65,15 @@ st.title("🎞️ Video Processor")
 
 uploaded_file = st.file_uploader("Upload video", type=["mp4", "avi"])
 if uploaded_file:
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
-        tmp.write(uploaded_file.read())
-        input_path = tmp.name
+    input_path = os.path.join("/app/output", uploaded_file.name)
+    with open(input_path, "wb") as f:
+        f.write(uploaded_file.getbuffer())
 
     st.video(input_path)
     st.write("Processing...")
 
     processed_path = process_video(input_path)
-    st.video(processed_path)
+    st.write("The video is ready to be sent")
     status = send_to_n8n(processed_path)
     st.success("Video sent to n8n!" if status == 200 else f"Failed to send to n8n. Status: {status}")
-    cleanup_files(processed_path, input_path)
+    cleanup_files(input_path, processed_path)
