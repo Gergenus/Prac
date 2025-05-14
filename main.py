@@ -3,11 +3,14 @@ import cv2
 import os
 import requests
 
-n8n_webhook_url = "http://localhost:5678/webhook/store-video"
+n8n_webhook_url = "http://94.131.101.111:5678/webhook/store-video"
+output_path = "/app/output/output_video.mp4"
 
 
+# Функция обработки видео. Принимает путь до файла, обрабтывает его и сохраняет
+# в  переменную output_path то есть например здесь cv2.VideoWriter(output_path...) нужно вставить именно этот путь
+# Позже этот файл отправится и удалится
 def process_video(input_path):
-    output_path = "/app/output/output_video.mp4"
     cap = cv2.VideoCapture(input_path)
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -32,9 +35,8 @@ def process_video(input_path):
 
     cap.release()
     out.release()
-    return output_path
 
-
+# Функция отправки файла
 def send_to_n8n(file_path):
     try:
         with open(file_path, 'rb') as f:
@@ -51,7 +53,7 @@ def send_to_n8n(file_path):
         st.error(f"Upload failed: {str(e)}")
         return 500
 
-
+# Функция очистки временных файлов
 def cleanup_files(*paths):
     for path in paths:
         try:
@@ -66,14 +68,17 @@ st.title("🎞️ Video Processor")
 uploaded_file = st.file_uploader("Upload video", type=["mp4", "avi"])
 if uploaded_file:
     input_path = os.path.join("/app/output", uploaded_file.name)
+# Прием видео
     with open(input_path, "wb") as f:
         f.write(uploaded_file.getbuffer())
 
     st.video(input_path)
     st.write("Processing...")
-
-    processed_path = process_video(input_path)
+# Обработка видео
+    process_video(input_path)
     st.write("The video is ready to be sent")
-    status = send_to_n8n(processed_path)
+# Отправка видео в бд
+    status = send_to_n8n(output_path)
     st.success("Video sent to n8n!" if status == 200 else f"Failed to send to n8n. Status: {status}")
-    cleanup_files(input_path, processed_path)
+# Очистка временных файлов
+    cleanup_files(input_path, output_path)
