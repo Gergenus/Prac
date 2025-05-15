@@ -2,9 +2,12 @@ import streamlit as st
 import cv2
 import os
 import requests
+from ultralytics import YOLO
+import torch.cuda
 
 n8n_webhook_url = "http://94.131.101.111:5678/webhook/store-video"
 output_path = "/app/output/output_video.mp4"
+model = YOLO("best.pt") # Моделька. подойдет любая йолка
 
 
 # Функция обработки видео. Принимает путь до файла, обрабтывает его и сохраняет
@@ -25,11 +28,26 @@ def process_video(input_path):
         if not ret:
             break
 
-        square_size = min(width, height) // 4
-        center_x, center_y = width // 2, height // 2
-        start_point = (center_x - square_size // 2, center_y - square_size // 2)
-        end_point = (center_x + square_size // 2, center_y + square_size // 2)
-        cv2.rectangle(frame, start_point, end_point, (0, 0, 255), 3)
+        frame_count += 1
+
+        if frame_count % nframes == 0:
+            ''' на обрабатываемом кадре: 
+            1. убираем старые поврежденния
+            2. запоминаем новые'''
+            results = model(frame)
+
+            last_detect.clear()
+            for result in results:
+                for box in result.boxes:
+                    x1, y1, x2, y2 = map(int, box.xyxy[0])
+                    label = result.names[int(box.cls[0])]
+                    conf = float(box.conf[0])
+                    last_detect.append((x1, y1, x2, y2, label, conf))  # каждое повреждение заносится в массив
+
+        for x1, y1, x2, y2, label, conf in last_detect:
+            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 0, 255),
+                          2)  # рисуночек на кадре из последнего обрабатываемого кадра
+            cv2.putText(frame, f"{label}{conf:.2f}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
 
         out.write(frame)
 
