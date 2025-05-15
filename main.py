@@ -3,7 +3,6 @@ import cv2
 import os
 import requests
 from ultralytics import YOLO
-import torch.cuda
 
 n8n_webhook_url = "http://94.131.101.111:5678/webhook/store-video"
 output_path = "/app/output/output_video.mp4"
@@ -13,8 +12,15 @@ model = YOLO("best.pt") # Моделька. подойдет любая йолк
 # Функция обработки видео. Принимает путь до файла, обрабтывает его и сохраняет
 # в  переменную output_path то есть например здесь cv2.VideoWriter(output_path...) нужно вставить именно этот путь
 # Позже этот файл отправится и удалится
-def process_video(input_path):
+def process_video(input_path, nframes=10):
+    # Инициализация переменных
+    frame_count = 0
+    last_detect = []
+
     cap = cv2.VideoCapture(input_path)
+    if not cap.isOpened():
+        raise RuntimeError("Error opening video file")
+
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = cap.get(cv2.CAP_PROP_FPS)
@@ -22,37 +28,40 @@ def process_video(input_path):
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     out = cv2.VideoWriter(output_path, fourcc, fps, (width, height), isColor=True)
     if not out.isOpened():
+        cap.release()
         raise RuntimeError("Failed to create VideoWriter!")
-    while cap.isOpened():
-        ret, frame = cap.read()
-        if not ret:
-            break
 
-        frame_count += 1
+    try:
+        while cap.isOpened():
+            ret, frame = cap.read()
+            if not ret:
+                break
 
-        if frame_count % nframes == 0:
-            ''' на обрабатываемом кадре: 
-            1. убираем старые поврежденния
-            2. запоминаем новые'''
-            results = model(frame)
+            frame_count += 1
 
-            last_detect.clear()
-            for result in results:
-                for box in result.boxes:
-                    x1, y1, x2, y2 = map(int, box.xyxy[0])
-                    label = result.names[int(box.cls[0])]
-                    conf = float(box.conf[0])
-                    last_detect.append((x1, y1, x2, y2, label, conf))  # каждое повреждение заносится в массив
+            # Обрабатываем каждый n-ный кадр
+            if frame_count % nframes == 0:
+                results = model(frame)
 
-        for x1, y1, x2, y2, label, conf in last_detect:
-            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 0, 255),
-                          2)  # рисуночек на кадре из последнего обрабатываемого кадра
-            cv2.putText(frame, f"{label}{conf:.2f}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+                last_detect.clear()
+                for result in results:
+                    for box in result.boxes:
+                        x1, y1, x2, y2 = map(int, box.xyxy[0])
+                        label = result.names[int(box.cls[0])]
+                        conf = float(box.conf[0])
+                        last_detect.append((x1, y1, x2, y2, label, conf))
 
-        out.write(frame)
+            # Рисуем последние обнаруженные объекты на текущем кадре
+            for x1, y1, x2, y2, label, conf in last_detect:
+                # Исправлено: цвет теперь BGR (3 значения вместо 4)
+                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
+                cv2.putText(frame, f"{label} {conf:.2f}", (x1, y1 - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
 
-    cap.release()
-    out.release()
+            out.write(frame)
+    finally:
+        cap.release()
+        out.release()
 
 # Функция отправки файла
 def send_to_n8n(file_path):

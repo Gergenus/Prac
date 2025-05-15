@@ -8,8 +8,9 @@ RUN apt-get update && apt-get upgrade -y \
 RUN python -m venv /videoenv
 ENV PATH="/videoenv/bin:$PATH"
 
-RUN pip install --upgrade pip \
-    && pip install streamlit opencv-python requests numpy
+RUN pip install --no-cache-dir torch==2.0.1 --index-url https://download.pytorch.org/whl/cpu
+RUN pip install --no-cache-dir ultralytics==8.0.124
+RUN pip install streamlit opencv-python requests
 
 
 COPY . /app/
